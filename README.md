@@ -58,6 +58,8 @@ relations_manage clear              清空本群插件记录，旧历史不再�
 - 报告附原话、日期、样本数、赏析时间；不足就留空，不强配对。抽样、截断、模型误读仍可能遗漏或理解错角色方向，原话可核对。
 - 赏析缓存30分钟，互动统计独立更新。`refresh:true` 强制重新赏析，调整模型/标签/样本配置使用新缓存。命令键值参数使用冒号。
 
+DeepSeek 官方接口使用非思考模式和 JSON 输出，避免长群聊样本耗尽输出预算却没有报告；参数依据[官方思考模式文档](https://api-docs.deepseek.com/guides/thinking_mode/)。其他模型接口使用默认模式。
+
 ## 图片渲染
 
 自托管 **browserless Chromium** `/screenshot`，默认 `http://nekro_html2img:3000`。容器需与 Nekro Agent 网络互通，安装 Noto Sans CJK 等中文字体。

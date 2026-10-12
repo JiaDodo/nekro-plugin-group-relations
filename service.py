@@ -5,6 +5,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -283,6 +284,12 @@ class RelationsService:
         allowed = [label for label in cfg.RELATION_LABELS if label in LABELS]
         payload = {"members": context["members"], "messages": context["messages"],
                    "allowed_labels": allowed, "max_relationships": cfg.MAX_RELATIONSHIPS}
+        # DeepSeek enables thinking by default; a long group sample can exhaust the
+        # output allowance before any JSON is produced. This task needs the report.
+        options = {}
+        if urlsplit(group.BASE_URL or "").hostname == "api.deepseek.com":
+            options = {"extra_body": {"thinking": {"type": "disabled"}},
+                       "response_format": {"type": "json_object"}}
         response = None
         try:
             async with self.model_lock:
@@ -291,7 +298,7 @@ class RelationsService:
                                            http_client=http, max_retries=1) as client:
                         response = await client.chat.completions.create(model=group.CHAT_MODEL,
                             messages=[{"role": "system", "content": SYSTEM_PROMPT},
-                                      {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}], max_tokens=6000)
+                                      {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}], max_tokens=6000, **options)
             result = parse_relationships(response.choices[0].message.content or "", context, allowed, cfg.MAX_RELATIONSHIPS)
             result.update(generated_at=int(time.time()), truncated=total > cfg.MAX_HISTORY_MESSAGES)
             return result
