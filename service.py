@@ -10,7 +10,8 @@ from urllib.parse import urlsplit
 import httpx
 
 from .analysis import analyze, enrich
-from .render import REPORT_WIDTH, graph_svg, image_html
+from .render import REPORT_WIDTH, avatar_member_ids, image_html
+from .avatars import AvatarCache
 from .repository import Repository
 from .context import LABELS, SYSTEM_PROMPT, parse_relationships, sample_context
 
@@ -47,6 +48,7 @@ class RelationsService:
     def __init__(self, plugin, config):
         self.plugin, self.config = plugin, config
         self.repo = Repository(plugin.get_plugin_data_dir() / "relations.sqlite3")
+        self.avatar_cache = AvatarCache(plugin.get_plugin_data_dir() / "avatar_cache")
         self.queue = asyncio.Queue(maxsize=5000)
         self.worker = None
         self.locks, self.cache, self.bot_ids, self.render_locks = {}, {}, {}, {}
@@ -220,7 +222,6 @@ class RelationsService:
             if not result["enabled"]:
                 warnings.append("本群已暂停采集，报告仅包含此前记录。")
             result["warning"] = " ".join(warnings)
-            result["svg"] = await asyncio.to_thread(graph_svg, result)
             self.cache[cache_key] = (time.monotonic(), result)
             result = json.loads(json.dumps(result))
         if ai:
@@ -316,12 +317,16 @@ class RelationsService:
                     file.unlink(missing_ok=True)
 
     def purge_exports(self):
+        self.avatar_cache.purge()
         folder = self.plugin.get_plugin_data_dir() / "exports"
         if folder.exists():
             for file in folder.glob("*.png"):
                 file.unlink(missing_ok=True)
 
     async def image(self, report: dict) -> Path:
+        report = json.loads(json.dumps(report))
+        avatars = report.setdefault("avatars", {})
+        avatars.update(await self.avatar_cache.load([uid for uid in avatar_member_ids(report) if uid not in avatars]))
         payload = image_html(report)
         digest = hashlib.sha256(payload.encode()).hexdigest()
         folder = self.plugin.get_plugin_data_dir() / "exports"
@@ -338,7 +343,7 @@ class RelationsService:
                         params={"token": cfg.RENDER_TOKEN} if cfg.RENDER_TOKEN else {},
                         json={"html": payload, "options": {"type": "png", "fullPage": True},
                               "viewport": {"width": REPORT_WIDTH, "height": 800, "deviceScaleFactor": 1},
-                              "waitForFunction": {"fn": "document.fonts.status === 'loaded'"}})
+                              "waitForFunction": {"fn": "document.fonts.status === 'loaded' && Array.from(document.images).every(img => img.complete)"}})
                     response.raise_for_status()
                     if not response.content.startswith(b"\x89PNG\r\n\x1a\n"):
                         raise ValueError("渲染服务未返回 PNG")
