@@ -203,6 +203,7 @@ def text_report(report: dict, uid: str = "") -> str:
 
 def image_html(report: dict) -> str:
     m = report["meta"]
+    personal = bool(report.get("personal"))
     names = member_names(report["members"])
     graph = overview(report)
     rankings = "".join(f'<div class="pair"><b class="rank">{i:02d}</b><div><strong>{esc(names[e["source"]])} <span>×</span> {esc(names[e["target"]])}</strong><small>{e["events"]} 次互动 · {e["days"]} 天</small></div><b>{e["score"]}</b></div>' for i, e in enumerate(report["edges"][:4], 1))
@@ -237,9 +238,10 @@ def image_html(report: dict) -> str:
     .dense .role{{height:156px;padding:6px}}.dense .person img,.dense .person>.face-fallback{{width:22px;height:22px}}.dense .tiny img,.dense .tiny>.face-fallback{{width:16px;height:16px}}.dense .actors{{margin:3px 0}}.summary p{{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden}}
     .actors{{height:30px;margin:2px 0}}.person-name{{line-height:1.25}}.role p{{margin:2px 0}}.role blockquote{{height:40px;max-height:40px;padding:2px 4px;margin:1px 0;line-height:18px}}.role p .tiny,.role blockquote .tiny{{height:16px;vertical-align:-3px}}.role p .tiny img,.role blockquote .tiny img,.role p .tiny .face-fallback,.role blockquote .tiny .face-fallback{{width:14px;height:14px}}.dense .actors{{margin:2px 0}}.dense .role p{{height:34px;line-height:17px}}.dense .role blockquote{{height:36px;max-height:36px;line-height:16px}}
     </style><body><section class="sheet"><div class="eyebrow">01 / 群关系图</div><h1>{esc(report['channel_name'])}</h1><div class="sub">最近 {report['days']} 天 · {date_label(m['start'])} — {date_label(m['end'] - 1)}</div>
-    <div class="stats">{''.join(f'<div class="stat"><b>{value}</b><span>{label}</span></div>' for label, value in [('记录消息',m['messages']),('参与成员',m['members']),('明确互动',m['interactions']),('互动组合',m['pairs'])])}</div>
+    {('<div class="sub">群聊：'+esc(report['group_name'])+'</div>') if personal else ''}
+    <div class="stats">{''.join(f'<div class="stat"><b>{value}</b><span>{label}</span></div>' for label, value in [('我的发言' if personal else '记录消息',m['messages']),('关联成员' if personal else '参与成员',m['members']),('明确互动',m['interactions']),('互动组合',m['pairs'])])}</div>
     <section class="panel">{graph_svg(report)}<div class="legend">蓝线：主要互动 · 粉色虚线：赏析关系，角色方向与原话见右侧<br>概览 {len(graph['nodes'])} / {m['members']} 位成员 · {len(graph['edges']) + len(graph['roles'])} 条主要连线；全部 {len(roles)} 条赏析见右侧。</div></section>
     <section class="panel"><h2>聊天搭子榜</h2><div class="rankings">{rankings or '<p>还没有明确互动记录。</p>'}</div></section><section class="panel observations">{notes}</section>
     <footer>互动指数用于排序 · 根据本群已记录消息生成</footer></section>
-    <section class="sheet"><div class="eyebrow">02 / 聊天赏析</div><h1>群聊关系</h1><div class="sub">前者 → 后者：前者扮演标签身份 · 最近 {report['days']} 天</div>{theater}
+    <section class="sheet"><div class="eyebrow">02 / 聊天赏析</div><h1>{'我的群关系' if personal else '群聊关系'}</h1><div class="sub">前者 → 后者：前者扮演标签身份 · 最近 {report['days']} 天</div>{theater}
     <footer>原话为节选 · 角色按群聊语境赏析 · 供娱乐</footer></section></body></html>'''

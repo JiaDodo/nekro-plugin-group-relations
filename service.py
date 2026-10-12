@@ -16,6 +16,15 @@ from .repository import Repository
 from .context import LABELS, SYSTEM_PROMPT, parse_relationships, sample_context
 
 
+def sender_identity(sender_id, platform_userid, bot_id="", name="") -> str:
+    sender_id, platform_userid = str(sender_id or ""), str(platform_userid or "")
+    if platform_userid == "0" or (sender_id == "-1" and name == "SYSTEM"):
+        return ""
+    if sender_id == "-1":
+        return platform_userid if platform_userid not in {"", "-1"} else bot_id
+    return platform_userid or sender_id
+
+
 def extract(message, bot_id: str = "") -> dict:
     """Accept both live ChatMessage and a DBChatMessage. Do not retain raw text."""
     content = message.content_data
@@ -29,9 +38,9 @@ def extract(message, bot_id: str = "") -> dict:
         item = item if isinstance(item, dict) else item.model_dump()
         kind = getattr(item.get("type"), "value", item.get("type"))
         target = str(item.get("target_platform_userid", ""))
-        if kind == "at" and target not in {"", "all", "0", bot_id}:
+        if kind == "at" and target not in {"", "all", "0", "-1"}:
             mentions.append(target)
-    sender = str(message.platform_userid or message.sender_id)
+    sender = sender_identity(message.sender_id, message.platform_userid, bot_id, message.sender_name)
     msg_id = str(message.message_id or f"db:{getattr(message, 'id', '')}")
     if msg_id == "db:":
         # Some notice events have no platform ID. Stable hash prevents duplicate event counts.
@@ -41,7 +50,7 @@ def extract(message, bot_id: str = "") -> dict:
     return {"id": msg_id, "sender": sender, "name": str(message.sender_nickname or message.sender_name or sender),
             "ts": int(message.send_timestamp), "mentions": sorted(set(mentions)),
             "reply": str(ext.get("ref_msg_id") or "") if same_group else "",
-            "reply_sender": reply_sender if same_group and reply_sender != bot_id else ""}
+            "reply_sender": reply_sender if same_group and reply_sender not in {"0", "-1"} else ""}
 
 
 class RelationsService:
@@ -58,6 +67,7 @@ class RelationsService:
         self.revisions = {}
         self.dropped = 0
         self.sync_status = {}
+        self.synced_groups = set()
 
     def allowed(self, chat_key: str) -> bool:
         allowed = self.config().GROUP_ALLOWLIST
@@ -138,7 +148,7 @@ class RelationsService:
                 result.append({"key": c.chat_key, "name": c.channel_name or c.chat_key, "enabled": bool(state["enabled"])})
         return result
 
-    async def sync(self, key: str, days: int):
+    async def sync(self, key: str, days: int, *, incremental=False):
         from nekro_agent.models.db_chat_message import DBChatMessage
         lock = self.locks.setdefault(key, asyncio.Lock())
         async with lock:
@@ -147,16 +157,20 @@ class RelationsService:
             if not state["enabled"]:
                 return {"imported": 0, "paused": True, "truncated": False}
             cutoff = max(int(time.time()) - min(days * 2, self.config().RETENTION_DAYS) * 86400, state["cleared_at"] + 1)
-            base = DBChatMessage.filter(chat_key=key, send_timestamp__gte=cutoff, is_recalled=False).exclude(sender_id="-1")
+            base = DBChatMessage.filter(chat_key=key, send_timestamp__gte=cutoff, is_recalled=False)
+            if incremental:
+                base = base.filter(id__gt=state["cursor"])
             count = await base.count()
             cap = self.config().MAX_HISTORY_MESSAGES
             source = await base.order_by("-id").limit(cap).all()
+            if incremental and not source:
+                return self.sync_status.get(key, {"imported": 0, "truncated": False})
             bot_id = self.bot_ids.get(key, "")
             rows = []
             for message in source:
                 try:
                     row = extract(message, bot_id)
-                    if row["sender"] != bot_id:
+                    if row["sender"] not in {"", "-1", "0"}:
                         rows.append(row)
                 except (ValueError, TypeError, AttributeError):
                     continue
@@ -164,22 +178,24 @@ class RelationsService:
             known = {r["id"]: r["sender"] for r in rows}
             unresolved = sorted({r["reply"] for r in rows if r["reply"] and r["reply"] not in known})
             for i in range(0, len(unresolved), 500):
-                refs = await DBChatMessage.filter(chat_key=key, message_id__in=unresolved[i:i + 500], is_recalled=False).values("message_id", "platform_userid", "sender_id")
+                refs = await DBChatMessage.filter(chat_key=key, message_id__in=unresolved[i:i + 500], is_recalled=False).values("message_id", "platform_userid", "sender_id", "sender_name")
                 for ref in refs:
-                    sender = str(ref["platform_userid"] or ref["sender_id"])
-                    if str(ref["sender_id"]) != "-1" and sender != bot_id:
+                    sender = sender_identity(ref["sender_id"], ref["platform_userid"], bot_id, ref["sender_name"])
+                    if sender not in {"", "0", "-1"}:
                         known[ref["message_id"]] = sender
             for r in rows:
-                # Ignore reply-to-bot events even when a transport exposes a ref_sender_id.
                 r["reply_sender"] = known.get(r["reply"], r["reply_sender"])
-                if r["reply_sender"] == bot_id or r["reply_sender"] == "-1":
+                if r["reply_sender"] in {"0", "-1"}:
                     r["reply_sender"] = ""
                     r["reply"] = ""
             await asyncio.to_thread(self.repo.insert, key, channel.channel_name or key, rows,
                                     max((m.id for m in source), default=state["cursor"]))
             covered = max(cutoff, min((r["ts"] for r in rows), default=cutoff)) if count > cap else cutoff
-            await asyncio.to_thread(self.repo.mark_sync, key, covered)
-            self.sync_status[key] = {"imported": len(rows), "available": count, "truncated": count > cap}
+            if not incremental:
+                await asyncio.to_thread(self.repo.mark_sync, key, covered)
+            truncated = count > cap or (incremental and self.sync_status.get(key, {}).get("truncated", False))
+            self.sync_status[key] = {"imported": len(rows), "available": count, "truncated": truncated}
+            self.synced_groups.add(key)
             self.invalidate(key)
             return self.sync_status[key]
 
@@ -189,8 +205,11 @@ class RelationsService:
         channel = await self.channel(key)
         info = await asyncio.to_thread(self.repo.sync_info, key)
         required_from = int(time.time()) - days * 2 * 86400
-        if refresh or not info or info.get("covered_from", 2**63) > required_from + 120:
+        if refresh or key not in self.synced_groups or not info or info.get("covered_from", 2**63) > required_from + 120:
             await self.sync(key, days)
+        else:
+            # Outgoing bot messages have no user-message callback; fetch new DB rows.
+            await self.sync(key, days, incremental=True)
         cache_key = (key, days, limit)
         cached = self.cache.get(cache_key)
         if cached and time.monotonic() - cached[0] < 120:
@@ -200,16 +219,18 @@ class RelationsService:
             start = end - days * 86400
             rows = await asyncio.to_thread(self.repo.rows, key, start - days * 86400, end)
             excluded = await asyncio.to_thread(self.repo.excluded, key)
-            excluded |= {self.bot_ids.get(key, ""), "-1"}
+            excluded |= {"", "0", "-1"}
             def compute():
                 report = analyze(rows, start, end, limit=limit, excluded=excluded,
                                  min_events=self.config().MIN_EDGE_EVENTS, daily_cap=self.config().DAILY_PAIR_CAP)
                 previous = analyze(rows, start - days * 86400, start, excluded=excluded)
                 return enrich(report, previous)
             result = await asyncio.to_thread(compute)
+            for member in result["members"]:
+                member["is_bot"] = member["id"] == self.bot_ids.get(key, "")
             result.update(channel_name=channel.channel_name or key, chat_key=key, days=days,
                           min_events=self.config().MIN_EDGE_EVENTS, ai_comment="", generated_at=end - 1,
-                          excluded_count=len(excluded - {"", "-1", self.bot_ids.get(key, "")}),
+                          excluded_count=len(excluded - {"", "0", "-1"}),
                           enabled=bool((await asyncio.to_thread(self.repo.state, key))["enabled"]))
             result["sync"] = self.sync_status.get(key, {})
             warnings = []
@@ -267,17 +288,19 @@ class RelationsService:
         state = await asyncio.to_thread(self.repo.state, key)
         cutoff = max(report["meta"]["start"], state["cleared_at"] + 1)
         base = DBChatMessage.filter(chat_key=key, send_timestamp__gte=cutoff,
-                                   send_timestamp__lt=report["meta"]["end"], is_recalled=False).exclude(sender_id="-1")
+                                   send_timestamp__lt=report["meta"]["end"], is_recalled=False)
         total = await base.count()
         source = await base.order_by("-id").limit(cfg.MAX_HISTORY_MESSAGES).all()
         rows = []
         for message in source:
             try:
-                rows.append({**extract(message, self.bot_ids.get(key, "")), "text": message.content_text or ""})
+                row = extract(message, self.bot_ids.get(key, ""))
+                if row["sender"] not in {"", "0", "-1"}:
+                    rows.append({**row, "text": message.content_text or ""})
             except (ValueError, TypeError, AttributeError):
                 continue
         excluded = await asyncio.to_thread(self.repo.excluded, key)
-        excluded |= {self.bot_ids.get(key, ""), "", "-1"}
+        excluded |= {"", "0", "-1"}
         context = await asyncio.to_thread(sample_context, rows, report["members"], excluded,
                                           cfg.MAX_CONTEXT_MESSAGES, cfg.CONTEXT_MESSAGE_CHARS)
         if len(context["messages"]) < 2:

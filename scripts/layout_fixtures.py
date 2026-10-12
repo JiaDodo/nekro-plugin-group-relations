@@ -12,6 +12,7 @@ CASES = [
     ("04-hub", "12人 · 单人中心", 12, "hub", 11),
     ("05-islands", "8人 · 分组与重名", 8, "islands", 4),
     ("06-empty", "无互动记录", 0, "empty", 0),
+    ("07-personal-bot", "我的关系 · 包含机器人", 5, "personal", 4),
 ]
 
 
@@ -38,7 +39,7 @@ def make_report(count, kind, role_count):
     names += [f"模拟群友{i:02d}" for i in range(12, count)]
     if kind == "islands":
         names[0] = names[1] = "同名群友"
-    if kind == "small":
+    if kind in {"small", "personal"}:
         pairs = [(0,1), (0,2), (0,3), (4,0), (3,1), (4,1)]
     elif kind == "hub":
         pairs = [(0, i) for i in range(1, count)]
@@ -70,4 +71,8 @@ def make_report(count, kind, role_count):
     report['context_analysis'] = dict(relationships=roles, summary="虚构成员相互接话，关系名称仅用于检查连线、标签、头像与长昵称排版。",
                                       sampled=len(rows), available=len(rows), generated_at=now)
     report['avatars'] = {f'demo-{i}': avatar(i) for i in range(count)}
+    if kind == 'personal':
+        from group_relations.analysis import personal_report
+        next(m for m in report['members'] if m['id']=='demo-1')['is_bot'] = True
+        report = personal_report(report, 'demo-0')
     return report

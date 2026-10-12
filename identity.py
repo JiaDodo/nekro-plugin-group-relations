@@ -28,7 +28,8 @@ def model_prose(text: str, aliases: dict[str, str], known: set[str]) -> str:
 
 
 def member_names(members: list[dict]) -> dict[str, str]:
-    names = {m["id"]: re.sub(r"\s+", " ", str(m["name"])).strip() or m["id"] for m in members}
+    names = {m["id"]: ("（机器人）" if m.get("is_bot") else "")
+             + (re.sub(r"\s+", " ", str(m["name"])).strip() or m["id"]) for m in members}
     counts = {}
     for name in names.values():
         counts[name] = counts.get(name, 0) + 1

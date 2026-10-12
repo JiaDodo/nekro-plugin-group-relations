@@ -80,7 +80,7 @@ def sample_context(rows: list[dict], members: list[dict], excluded: set[str], ca
                    "reply_to": aliases.get(row.get("reply_sender", ""), "")}
         messages.append(message)
         lookup[mid] = dict(row)
-    return {"members": [{"id": aliases[m["id"]], "name": m["name"]} for m in safe_members],
+    return {"members": [{"id": aliases[m["id"]], "name": m["name"], "is_bot": bool(m.get("is_bot"))} for m in safe_members],
             "messages": messages, "aliases": {v: k for k, v in aliases.items()}, "lookup": lookup,
             "available": len(clean), "sampled": len(messages)}
 

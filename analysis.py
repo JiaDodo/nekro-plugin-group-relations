@@ -2,11 +2,57 @@
 from __future__ import annotations
 
 import math
+import copy
 from collections import Counter, defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from .identity import REFERENCE, member_names
+
 TZ = ZoneInfo("Asia/Shanghai")
+
+
+def personal_report(report: dict, uid: str) -> dict:
+    """Build an independent ego report; unrelated pairs never enter its cards."""
+    source = next((m for m in report["members"] if m["id"] == uid), None)
+    if not source:
+        raise ValueError("本期没有你的可用互动数据。可能尚未积累记录，或你已退出统计。")
+    result = copy.deepcopy(report)
+    edges = [e for e in result["edges"] if uid in (e["source"], e["target"])]
+    context = result.setdefault("context_analysis", {})
+    roles = [r for r in context.get("relationships", []) if uid in (r["source"], r["target"])]
+    known = {uid} | {x for e in edges+roles for x in (e["source"], e["target"])}
+    names = member_names(report["members"])
+    # Third-party references in genuine excerpts retain a readable nickname.
+    def references(text):
+        return REFERENCE.sub(lambda m: m.group(0) if m.group(1) in known else names.get(m.group(1), "某位成员"), text)
+    for role in roles:
+        role["reason"] = references(role["reason"])
+        for quote in role["evidence"]:
+            quote["text"] = references(quote["text"])
+    members = [m for m in result["members"] if m["id"] in known]
+    members.sort(key=lambda m: m["id"] != uid)
+    result["members"], result["edges"] = members, edges
+    result["graph"] = {"nodes": members[:20], "edges": edges}
+    result["clusters"] = []
+    result["personal"] = {"uid": uid, "name": source["name"], "sent": source["sent"], "received": source["received"]}
+    result["group_name"] = report["channel_name"]
+    result["channel_name"] = names[uid]+" · 我的群关系"
+    result["meta"].update(messages=source["messages"], members=len(members), interactions=sum(e["events"] for e in edges),
+                          pairs=len(edges), shown_members=min(20,len(members)), shown_edges=len(edges))
+    context["relationships"] = roles
+    context["summary"] = f"本期我与 {len(known)-1} 位成员产生关联，有 {sum(e['events'] for e in edges)} 次明确互动，赏析出 {len(roles)} 组与我相关的关系。"
+    if context.get("error"):
+        context["summary"] += " 聊天赏析暂时不可用，已保留互动统计。"
+    result["notes"] = [f"我主动互动 {source['sent']} 次，被互动 {source['received']} 次。"]
+    if edges:
+        top = edges[0]
+        peer = top["target"] if top["source"] == uid else top["source"]
+        result["notes"].append(f"我的首位聊天搭子：{names[peer]}，共 {top['events']} 次互动，分布在 {top['days']} 天。")
+    result["notes"].append("只展示本人相关的互动与角色；没有连线不代表关系疏远。")
+    result["ai_comment"] = ""
+    result["avatars"] = {k:v for k,v in result.get("avatars", {}).items() if k in known}
+    return result
 
 
 def date_label(timestamp: int) -> str:

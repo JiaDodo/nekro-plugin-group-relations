@@ -12,11 +12,12 @@ from nekro_agent.api.message import ChatMessage
 from nekro_agent.services.command.schemas import CommandOutputSegment, CommandOutputSegmentType
 
 from .context import LABELS
+from .analysis import personal_report
 from .render import text_report
 from .service import RelationsService, extract
 
 plugin = NekroPlugin(
-    name="群关系观察", module_name="group_relations", author="JiaDodo", version="0.3.2",
+    name="群关系观察", module_name="group_relations", author="JiaDodo", version="0.4.0",
     description="根据本群聊天赏析亲属、损友、CP、情妇、主仆等娱乐关系，附原话依据和图片报告；直接使用原生 WebUI。",
     url="https://github.com/JiaDodo/nekro-plugin-group-relations", support_adapter=["onebot_v11"],
     allow_sleep=True, sleep_brief="分析本群互动关系、查询我的聊天搭子、生成群关系图和关系周报。",
@@ -76,8 +77,7 @@ async def collect(_ctx: AgentCtx, message: ChatMessage):
         return None
     try:
         row = extract(message, _service.bot_ids.get(message.chat_key, ""))
-        if row["sender"] != _service.bot_ids.get(message.chat_key):
-            _service.enqueue(message.chat_key, _ctx.channel_name or message.chat_key, row)
+        _service.enqueue(message.chat_key, _ctx.channel_name or message.chat_key, row)
     except Exception:
         plugin.logger.warning("忽略无法解析的互动消息；正常聊天继续处理")
     return None
@@ -127,14 +127,30 @@ async def relations_command(context: CommandExecutionContext, days: int = Arg("�
         yield CmdCtl.failed("关系报告暂时不可用，请查看插件日志。")
 
 
-@plugin.mount_command(name="my_relations", aliases=["我的群关系"], description="查看自己在本群的互动搭子", permission=CommandPermission.PUBLIC, usage="my_relations [days]", category="群关系")
-async def my_command(context: CommandExecutionContext, days: int = Arg("最近天数，1–30", default=7, positional=True)):
+@plugin.mount_command(name="my_relations", aliases=["我的群关系", "myrelation", "myrelations"], description="生成自己的互动搭子与关系图片", permission=CommandPermission.PUBLIC, usage="my_relations [days] [contextual:true] [refresh:false] [image:true]", category="群关系")
+async def my_command(context: CommandExecutionContext, days: int = Arg("最近天数，1–30", default=7, positional=True), contextual: bool = Arg("赏析聊天正文", default=True), refresh: bool = Arg("强制同步和重新赏析", default=False), image: bool = Arg("生成图片，关闭则返回文字", default=True)):
     try:
         if context.adapter_key == "webui":
-            return CmdCtl.failed("个人关系请由本人在群里执行 /my_relations；后台管理员账号不是 QQ 成员身份。")
-        return CmdCtl.success(text_report(await service().report(context.chat_key, days), str(context.user_id)))
+            yield CmdCtl.failed("个人关系请由本人在群里执行 /my_relations；后台管理员账号不是 QQ 成员身份。")
+            return
+        yield CmdCtl.message("正在生成你的群关系报告……")
+        report = personal_report(await service().report(context.chat_key, days, ai=contextual, refresh=refresh), str(context.user_id))
+        if image:
+            try:
+                path = await service().image(report)
+                yield CmdCtl.success([
+                    CommandOutputSegment(type=CommandOutputSegmentType.TEXT, text=f"你的群关系报告已生成 · 最近 {days} 天。"),
+                    CommandOutputSegment(type=CommandOutputSegmentType.IMAGE, file_path=str(path)),
+                ])
+                return
+            except Exception:
+                plugin.logger.warning("个人关系图片生成失败，回退文字报告")
+        yield CmdCtl.success(text_report(report))
     except ValueError as e:
-        return CmdCtl.failed(str(e))
+        yield CmdCtl.failed(str(e))
+    except Exception:
+        plugin.logger.exception("个人关系报告生成失败")
+        yield CmdCtl.failed("个人关系报告暂时不可用，请查看插件日志。")
 
 
 @plugin.mount_command(name="relations_optout", aliases=["退出关系统计"], description="退出本群关系统计并清理自己的互动数据", permission=CommandPermission.PUBLIC, category="群关系")
@@ -195,9 +211,19 @@ async def analyze_group_relations(_ctx: AgentCtx, days: int = 7, send_image: boo
 
 
 @plugin.mount_sandbox_method(SandboxMethodType.TOOL, name="查询我的群关系", description="查询触发者在当前群的互动搭子。")
-async def get_my_group_relations(_ctx: AgentCtx, days: int = 7) -> str:
-    """Show the triggering user's interaction partners in the current group. days: 1–30."""
+async def get_my_group_relations(_ctx: AgentCtx, days: int = 7, send_image: bool = True) -> str:
+    """Show the triggering user's relationship image. days: 1–30; send_image defaults to true."""
     user = _ctx.db_user
     if not user:
         return "无法确认本次请求的用户，请使用 /my_relations 命令。"
-    return text_report(await service().report(_ctx.chat_key, days), str(user.platform_userid))
+    try:
+        report = personal_report(await service().report(_ctx.chat_key, days), str(user.platform_userid))
+    except ValueError as e:
+        return str(e)
+    if send_image:
+        try:
+            await _ctx.send_image(str(await service().image(report)))
+            return "你的群关系图片已发送。"
+        except Exception:
+            plugin.logger.warning("个人关系图片生成或发送失败，回退文字报告")
+    return text_report(report)

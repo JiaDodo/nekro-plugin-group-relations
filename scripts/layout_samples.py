@@ -28,7 +28,8 @@ async def main():
     cards = []
     for key, title, count, kind, role_count in CASES:
         report = make_report(count, kind, role_count)
-        report['channel_name'] = title+' · 模拟数据'
+        if not report.get('personal'):
+            report['channel_name'] = title+' · 模拟数据'
         svg, page = graph_svg(report), image_html(report)
         (args.output/f'{key}.svg').write_text(svg, encoding='utf-8')
         (args.output/f'{key}.html').write_text(page, encoding='utf-8')
@@ -62,7 +63,7 @@ async def main():
     <ol><li>连线应平滑、直接连接双方，没有绕向空位的尖角或折返。</li><li>关系名称在对应连线上，直接使用父亲、损友等名称。</li><li>头像与昵称分开，长昵称、重名仍可辨认；连接少的成员不挤在同一个角落。</li><li>54人样例只画12人概览，右侧保留20条关系；统计人数仍为54。</li><li>复杂关系仍可能有交叉，检查每条线能否追踪到双方。</li></ol>
     '''+''.join(cards)
     (args.output/'index.html').write_text(gallery, encoding='utf-8')
-    (args.output/'检查说明.txt').write_text('打开 index.html 按页面中的五项标准检查。\n样例包括5人、12人、54人、单人中心、分组重名与空数据。\n每组同时提供PNG、HTML、SVG和JSON，可放大或核对原始模拟数据。\n生成方式：python scripts/layout_samples.py OUTPUT_DIR --endpoint http://nekro_html2img:3000\n', encoding='utf-8')
+    (args.output/'检查说明.txt').write_text('打开 index.html 按页面中的五项标准检查。\n样例包括5人、12人、54人、单人中心、分组重名、空数据，以及包含机器人的个人关系图。\n每组同时提供PNG、HTML、SVG和JSON，可放大或核对原始模拟数据。\n生成方式：python scripts/layout_samples.py OUTPUT_DIR --endpoint http://nekro_html2img:3000\n', encoding='utf-8')
 
 
 if __name__ == '__main__':
