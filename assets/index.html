@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>群关系观察 · Nekro Agent</title><link rel="stylesheet" href="./assets/style.css"><script defer src="./assets/app.js"></script></head>
+<body>
+<header><a class="brand" href="/" aria-label="返回 Nekro Agent"><span class="brand-icon">✣</span><span>Nekro Agent <small>群关系观察</small></span></a><div class="head-right"><span class="pill">INTERACTION ATLAS</span><button id="logout" class="quiet">退出看板</button></div></header>
+<main>
+<section class="intro"><div><p class="eyebrow">把群聊里的来来往往，画成一张星图</p><h1>看看大家，最近都在和谁聊。</h1><p class="muted">从 @ 与引用回复出发，发现聊天搭子、持续互动和群聊里的连接。</p></div><div class="orbit" aria-hidden="true"><i></i><i></i><i></i><b>✣</b></div></section>
+<section id="login-panel" class="panel login" hidden><div><h2>使用后台账号登录</h2><p class="muted">需要 Nekro Agent 管理员权限。登录凭据只用于本站后台。</p></div><form id="login-form"><label>用户名<input id="username" name="username" autocomplete="username" required></label><label>密码<input id="password" name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">进入关系看板</button></form></section>
+<div id="status" role="status" aria-live="polite"></div>
+<section id="workspace" hidden>
+<div class="toolbar panel"><label>选择群聊<select id="channel"><option value="">加载群列表…</option></select></label><label>统计周期<select id="days"><option value="7">最近 7 天</option><option value="1">最近 24 小时</option><option value="14">最近 14 天</option><option value="30">最近 30 天</option></select></label><label>图中成员<select id="limit"><option value="20">前 20 位</option><option value="10">前 10 位</option><option value="30">前 30 位</option><option value="40">前 40 位</option></select></label><div class="toolbar-actions"><button id="refresh">同步历史</button><button id="download" class="primary">导出报告 PNG</button></div></div>
+<div class="stats"><article><span>记录消息</span><b id="stat-messages">—</b><small>所选周期内</small></article><article><span>参与成员</span><b id="stat-members">—</b><small>发言或被互动</small></article><article><span>明确互动</span><b id="stat-interactions">—</b><small>@ 与引用回复</small></article><article><span>互动组合</span><b id="stat-pairs">—</b><small>按成员对去重</small></article></div>
+<div class="graph-layout"><section class="panel graph-panel"><div class="section-title"><div><p class="eyebrow">THE CONNECTIONS</p><h2>本群互动星图</h2></div><div class="graph-controls"><button id="reset-view" title="重置视图">重置视图</button><button id="download-svg">SVG</button></div></div><div id="graph" class="graph" aria-label="可交互群关系图"></div><div class="graph-footer"><span><i class="dot"></i>双向互动较多 <i class="dot dim"></i>单向互动较多</span><span>拖动成员 · 滚轮缩放 · 点击连线查看依据</span></div></section>
+<aside class="panel detail-panel"><p class="eyebrow">A CLOSER LOOK</p><h2 id="detail-title">点亮一段连接</h2><div id="detail"><p class="muted">点击成员，看看 TA 的聊天搭子；点击连线，查看互动方向和次数。</p><div class="empty-art">✧<span>每一条连线，都有互动依据。</span></div></div></aside></div>
+<div class="lower-layout"><section class="panel"><div class="section-title"><div><p class="eyebrow">CHAT COMPANIONS</p><h2>聊天搭子榜</h2></div><span class="muted">按互动指数排序</span></div><div id="ranking"></div></section><section class="panel"><div class="section-title"><div><p class="eyebrow">GROUP OBSERVATIONS</p><h2>本期关系观察</h2></div><button id="ai">生成 AI 点评</button></div><div id="notes"></div><div id="ai-comment" class="ai-comment" hidden></div><p id="warning" class="warning" hidden></p><p id="coverage" class="muted fine"></p></section></div>
+<section class="panel management"><div><h2>本群数据管理</h2><p class="muted">暂停后保留现有记录；清空后仅统计清空时间之后的消息。</p></div><div><button id="toggle">暂停采集</button><button id="clear" class="danger">清空本群数据</button></div></section>
+</section>
+<footer>仅依据机器人已接收的本群互动 · 相邻发言不自动算作对话 · 互动指数不是关系概率 · 供娱乐</footer>
+</main>
+</body></html>
