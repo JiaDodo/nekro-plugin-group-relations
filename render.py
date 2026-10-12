@@ -6,6 +6,8 @@ import math
 
 from .analysis import date_label, layout
 
+REPORT_WIDTH = 1480
+
 
 def esc(value) -> str:
     return html.escape(str(value), quote=True)
@@ -14,9 +16,15 @@ def esc(value) -> str:
 def graph_svg(report: dict) -> str:
     nodes, edges = report["graph"]["nodes"], report["graph"]["edges"]
     positions = layout(nodes, edges)
-    parts = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 650" role="img" aria-label="群聊互动关系网络">',
+    if positions:
+        xs, ys = [p[0] for p in positions.values()], [p[1] for p in positions.values()]
+        dx, dy = max(xs) - min(xs), max(ys) - min(ys)
+        positions = {uid: (100 + (x-min(xs))/dx*800 if dx else 500,
+                           60 + (y-min(ys))/dy*340 if dy else 230)
+                     for uid, (x, y) in positions.items()}
+    parts = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" role="img" aria-label="群聊互动关系网络">',
              '<defs><radialGradient id="halo"><stop stop-color="#83b7ff" stop-opacity=".12"/><stop offset="1" stop-color="#83b7ff" stop-opacity="0"/></radialGradient></defs>',
-             '<circle cx="500" cy="310" r="310" fill="url(#halo)"/>', '<g id="graph-content">']
+             '<circle cx="500" cy="250" r="250" fill="url(#halo)"/>', '<g id="graph-content">']
     for e in edges:
         x1, y1 = positions[e["source"]]
         x2, y2 = positions[e["target"]]
@@ -36,15 +44,17 @@ def graph_svg(report: dict) -> str:
                        y1 + (y2-y1)*t + (x2-x1)/length*offset)
                       for t in (.5, .4, .6) for offset in (0, 35, -35, 65, -65)]
         def clearance(point):
+            if not 55 <= point[0] <= 945 or not 25 <= point[1] <= 450:
+                return -1000
             node_gap = min(math.hypot(point[0]-p[0], point[1]-p[1]) for p in positions.values())
             label_gap = min((math.hypot(point[0]-p[0], (point[1]-p[1])*2) for p in label_positions), default=1000)
             return min(node_gap, label_gap)
         x, y = max(candidates, key=clearance)
         label_positions.append((x, y))
-        label = esc(role["label"] + "梗")
+        label = esc(role["label"])
         parts.append(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="#eea5d3" stroke-width="2" stroke-dasharray="5 6"/>'
                      f'<rect x="{x-44}" y="{y-14}" width="88" height="27" rx="8" fill="#34203b"/>'
-                     f'<text x="{x}" y="{y+5}" text-anchor="middle" fill="#ffc5e9" font-size="14">{label}</text>')
+                     f'<text x="{x}" y="{y+5}" text-anchor="middle" fill="#ffc5e9" font-size="18">{label}</text>')
     for u in nodes:
         x, y = positions[u["id"]]
         radius = min(30, 19 + math.sqrt(u["sent"] + u["received"]))
@@ -53,10 +63,10 @@ def graph_svg(report: dict) -> str:
                      f'<circle r="{radius + 6:.1f}" fill="{u["color"]}" fill-opacity=".1"/>'
                      f'<circle r="{radius:.1f}" fill="#18253b" stroke="{u["color"]}" stroke-width="2"/>'
                      f'<text text-anchor="middle" dominant-baseline="central" fill="{u["color"]}" font-size="17" font-weight="700">{esc(u["name"][:1])}</text>'
-                     f'<text text-anchor="middle" y="{radius + 23:.1f}" fill="#e4ebf7" font-size="15">{esc(name)}</text>'
+                     f'<text text-anchor="middle" y="{radius + 25:.1f}" fill="#e4ebf7" font-size="20">{esc(name)}</text>'
                      f'<title>{esc(u["name"])} · {u["messages"]} 条发言 · {u["degree"]} 位互动成员</title></g>')
     if not nodes:
-        parts.append('<text x="500" y="310" text-anchor="middle" fill="#93a4bf" font-size="22">暂无群聊互动数据</text>')
+        parts.append('<text x="500" y="250" text-anchor="middle" fill="#93a4bf" font-size="22">暂无群聊互动数据</text>')
     parts.append('</g></svg>')
     return "".join(parts)
 
@@ -79,7 +89,7 @@ def text_report(report: dict, uid: str = "") -> str:
     if roles:
         lines.append("群聊关系剧本（前者扮演角色）：")
         for r in roles:
-            lines.append(f"{names[r['source']]} → {names[r['target']]}：{r['label']}梗 · {r['basis']}\n{r['reason']}")
+            lines.append(f"{names[r['source']]} → {names[r['target']]}：{r['label']} · {r['basis']}\n{r['reason']}")
             for quote in r["evidence"][:2]:
                 lines.append(f"  {names.get(quote['sender'], quote['sender'])}：{quote['text']}")
     if context.get("summary") and not uid:
@@ -95,33 +105,37 @@ def text_report(report: dict, uid: str = "") -> str:
 def image_html(report: dict) -> str:
     m = report["meta"]
     names = {u["id"]: u["name"] for u in report["members"]}
-    rankings = "".join(f'<div class="pair"><b class="rank">{i:02d}</b><div><strong>{esc(names[e["source"]])} <span>×</span> {esc(names[e["target"]])}</strong><small>{e["events"]} 次互动 · {e["days"]} 天 · {esc(e["label"])}</small></div><b>{e["score"]}<small>互动指数</small></b></div>' for i, e in enumerate(report["edges"][:6], 1))
+    rankings = "".join(f'<div class="pair"><b class="rank">{i:02d}</b><div><strong>{esc(names[e["source"]])} <span>×</span> {esc(names[e["target"]])}</strong><small>{e["events"]} 次互动 · {e["days"]} 天</small></div><b>{e["score"]}</b></div>' for i, e in enumerate(report["edges"][:4], 1))
     notes = "".join(f'<p>{esc(n)}</p>' for n in report["notes"])
     context = report.get("context_analysis", {})
     roles = []
     for r in context.get("relationships", []):
-        quotes = "".join(f'<blockquote><b>{esc(names.get(q["sender"], q["sender"]))}</b> · {esc(date_label(q["ts"]))}<br>{esc(q["text"][:180])}</blockquote>' for q in r["evidence"][:2])
-        roles.append(f'<article class="role"><div class="rolehead"><strong>{esc(names[r["source"]])} → {esc(names[r["target"]])}</strong><b class="tag">{esc(r["label"])}梗</b><small>{esc(r["basis"])}</small></div><p>{esc(r["reason"])}</p>{quotes}</article>')
+        quotes = "".join(f'<blockquote><b>{esc(names.get(q["sender"], q["sender"]))}：</b>{esc(q["text"][:90])}</blockquote>' for q in r["evidence"][:1])
+        roles.append(f'<article class="role"><div class="rolehead"><strong>{esc(names[r["source"]])} → {esc(names[r["target"]])}</strong><b class="tag">{esc(r["label"])}</b></div><p>{esc(r["reason"])}</p>{quotes}<small>{esc(r["basis"])} · 共 {len(r["evidence"])} 条依据 · 原话节选</small></article>')
     context_info = f'抽样 {context.get("sampled", 0)} 条聊天' if "sampled" in context else ""
     if context.get("generated_at"):
         context_info += " · 赏析时间 " + date_label(context["generated_at"])
     if context.get("truncated") or context.get("sampled", 0) < context.get("available", 0):
         context_info += " · 部分样本"
-    theater = '<section class="panel"><h2>群聊关系剧本</h2><div class="legend">前者扮演标签角色 · 称呼与互动演绎供娱乐</div>' + "".join(roles) + f'<p>{esc(context.get("summary", "本次未赏析聊天正文。"))}</p><small>{esc(context_info)}</small></section>'
+    columns = 3 if len(roles) > 12 else 2
+    theater = f'<div class="roles" style="grid-template-columns:repeat({columns},minmax(0,1fr))">' + "".join(roles) + f'</div><div class="summary"><p>{esc(context.get("summary", "本次未赏析聊天正文。"))}</p><small>{esc(context_info)}</small></div>'
     if report.get("ai_comment"):
         notes += f'<div class="ai"><b>AI 娱乐点评</b><p>{esc(report["ai_comment"])}</p></div>'
     if report.get("warning"):
         notes += f'<p class="warning">{esc(report["warning"])}</p>'
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>
-    *{{box-sizing:border-box}}body{{margin:0;background:#0b1220;color:#e5edf9;font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif;width:1080px;padding:42px}}
-    .eyebrow{{color:#8bbcff;font-size:14px;letter-spacing:3px}}h1{{font-size:38px;margin:10px 0}}.sub,small{{color:#8fa1bd}}.sub{{font-size:17px}}.stats{{display:flex;gap:15px;margin:28px 0}}
-    .stat{{background:#142036;border:1px solid #26354d;border-radius:15px;padding:20px;flex:1}}.stat b{{font-size:30px;display:block}}.stat span{{font-size:14px;color:#91a4c0}}
-    .panel{{background:#101b2d;border:1px solid #26354d;border-radius:20px;padding:25px;margin:20px 0}}h2{{font-size:20px;margin:0 0 10px}}svg{{display:block;width:100%}}.legend{{font-size:14px;color:#8fa1bd}}
-    .pair{{display:flex;align-items:center;gap:18px;padding:17px 0;border-bottom:1px solid #25334a}}.rank{{font-size:24px;color:#6c88b2}}.pair div{{flex:1}}.pair strong{{font-size:18px}}.pair span{{color:#7185a6}}small{{display:block;font-size:13px;margin-top:6px}}.pair>b:last-child{{text-align:right;color:#a9cfff}}
-    p{{line-height:1.9;font-size:16px;margin:12px 0}}.ai{{background:#1b2440;border-radius:12px;padding:18px;margin-top:20px}}.warning{{color:#eac38a}}footer{{font-size:13px;color:#7385a1;text-align:center;margin-top:26px}}
-    .role{{border-top:1px solid #2c354c;padding:22px 0 12px;margin-top:15px}}.rolehead{{display:flex;align-items:center;gap:15px;flex-wrap:wrap}}.rolehead strong{{font-size:20px}}.rolehead small{{margin:0}}.tag{{color:#ffc5e9;background:#34203b;padding:6px 14px;border-radius:8px;font-size:17px}}blockquote{{margin:10px 0;padding:12px 18px;border-left:3px solid #ba82a8;background:#172034;color:#aebed5;font-size:15px;line-height:1.8;overflow-wrap:anywhere}}.role p{{overflow-wrap:anywhere}}
-    </style><body><div class="eyebrow">NEKRO · GROUP RELATIONS</div><h1>{esc(report['channel_name'])}</h1><div class="sub">群聊互动关系报告 · 最近 {report['days']} 天 · {date_label(m['start'])} — {date_label(m['end'] - 1)}</div>
+    *{{box-sizing:border-box}}body{{margin:0;background:#080f1b;color:#e5edf9;font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif;width:{REPORT_WIDTH}px;padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:16px}}
+    .sheet{{min-width:0;background:#101b2d;border:1px solid #26354d;border-radius:18px;padding:22px;display:flex;flex-direction:column}}
+    .eyebrow{{color:#8bbcff;font-size:12px;letter-spacing:2px}}h1{{font-size:26px;margin:8px 0 6px;overflow-wrap:anywhere}}.sub,small{{color:#8fa1bd}}.sub{{font-size:12px}}.stats{{display:flex;gap:8px;margin:16px 0 6px}}
+    .stat{{background:#162239;border-radius:10px;padding:12px;flex:1}}.stat b{{font-size:23px;display:block}}.stat span{{font-size:11px;color:#91a4c0}}
+    .panel{{border-top:1px solid #26354d;padding:10px 0 0;margin:10px 0 0}}h2{{font-size:16px;margin:0 0 8px}}svg{{display:block;width:100%;max-height:330px}}.legend{{font-size:11px;color:#8fa1bd;line-height:1.7}}
+    .rankings{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.pair{{display:flex;align-items:center;gap:8px;padding:10px;background:#162239;border-radius:9px;min-width:0}}.rank{{font-size:17px;color:#6c88b2}}.pair div{{flex:1;min-width:0}}.pair strong{{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.pair span{{color:#7185a6}}small{{display:block;font-size:10px;margin-top:5px;line-height:1.5}}.pair>b:last-child{{font-size:13px;text-align:right;color:#a9cfff}}
+    p{{line-height:1.7;font-size:13px;margin:6px 0}}.ai{{background:#1b2440;border-radius:10px;padding:10px;margin-top:10px}}.warning{{color:#eac38a}}footer{{font-size:10px;color:#7385a1;margin-top:auto;padding-top:16px;line-height:1.6}}
+    .roles{{display:grid;gap:8px;margin-top:14px}}.role{{background:#172136;border:1px solid #2b354b;border-radius:10px;padding:8px;min-width:0}}.rolehead{{display:flex;align-items:center;gap:6px;line-height:1.4}}.rolehead strong{{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.tag{{flex-shrink:0;color:#ffc5e9;background:#34203b;padding:2px 6px;border-radius:6px;font-size:11px}}blockquote{{margin:5px 0 3px;padding:4px 6px;border-left:2px solid #ba82a8;background:#111b2e;color:#aebed5;font-size:11px;line-height:1.5;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}}.role p{{font-size:12px;line-height:1.5;margin:5px 0;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-height:36px}}.role small{{font-size:9px;line-height:1.4;margin-top:3px}}.summary{{margin-top:14px;padding:12px;background:#1b2440;border-radius:10px}}.summary p{{margin:0}}.observations p{{font-size:11px;margin:5px 0}}
+    </style><body><section class="sheet"><div class="eyebrow">01 / 群关系图</div><h1>{esc(report['channel_name'])}</h1><div class="sub">最近 {report['days']} 天 · {date_label(m['start'])} — {date_label(m['end'] - 1)}</div>
     <div class="stats">{''.join(f'<div class="stat"><b>{value}</b><span>{label}</span></div>' for label, value in [('记录消息',m['messages']),('参与成员',m['members']),('明确互动',m['interactions']),('互动组合',m['pairs'])])}</div>
-    <section class="panel"><h2>本群互动星图</h2>{graph_svg(report)}<div class="legend">蓝线为明确互动，粉色虚线为聊天角色梗；角色方向见下方原话。显示前 {m['shown_members']} 位成员，至少 {report['min_events']} 次互动才画统计线。</div></section>
-    {theater}<section class="panel"><h2>聊天搭子榜</h2>{rankings or '<p>还没有明确互动记录。</p>'}</section><section class="panel"><h2>互动观察</h2>{notes}</section>
-    <footer>根据本群聊天与互动记录生成 · 群聊剧本不认定现实关系 · 互动指数不是关系概率 · 供娱乐</footer></body></html>'''
+    <section class="panel">{graph_svg(report)}<div class="legend">蓝线：明确互动 · 粉色虚线：赏析关系 · 显示前 {m['shown_members']} 位成员<br>关系方向见右侧；统计线至少 {report['min_events']} 次互动。</div></section>
+    <section class="panel"><h2>聊天搭子榜</h2><div class="rankings">{rankings or '<p>还没有明确互动记录。</p>'}</div></section><section class="panel observations">{notes}</section>
+    <footer>互动指数用于排序 · 根据本群已记录消息生成</footer></section>
+    <section class="sheet"><div class="eyebrow">02 / 聊天赏析</div><h1>群聊关系</h1><div class="sub">前者 → 后者：前者扮演标签身份 · 最近 {report['days']} 天</div>{theater}
+    <footer>原话为节选 · 角色按群聊语境赏析 · 供娱乐</footer></section></body></html>'''

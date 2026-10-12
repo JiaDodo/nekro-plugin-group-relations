@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .analysis import analyze, enrich
-from .render import graph_svg, image_html
+from .render import REPORT_WIDTH, graph_svg, image_html
 from .repository import Repository
 from .context import LABELS, SYSTEM_PROMPT, parse_relationships, sample_context
 
@@ -337,7 +337,7 @@ class RelationsService:
                     response = await client.post(cfg.RENDER_ENDPOINT.rstrip("/") + "/screenshot",
                         params={"token": cfg.RENDER_TOKEN} if cfg.RENDER_TOKEN else {},
                         json={"html": payload, "options": {"type": "png", "fullPage": True},
-                              "viewport": {"width": 1080, "height": 900, "deviceScaleFactor": 2},
+                              "viewport": {"width": REPORT_WIDTH, "height": 800, "deviceScaleFactor": 1},
                               "waitForFunction": {"fn": "document.fonts.status === 'loaded'"}})
                     response.raise_for_status()
                     if not response.content.startswith(b"\x89PNG\r\n\x1a\n"):

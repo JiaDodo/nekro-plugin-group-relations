@@ -93,7 +93,9 @@ class ContextTests(unittest.TestCase):
         self.assertNotIn("<script>", html)
         self.assertNotIn("<img src=x", html)
         self.assertIn("&lt;script&gt;", html)
-        self.assertIn("父亲梗", text_report(report))
+        self.assertIn("：父亲 ·", text_report(report))
+        self.assertIn('class="tag">父亲</b>', html)
+        self.assertNotIn("父亲梗", html)
 
 
 class CacheTests(unittest.IsolatedAsyncioTestCase):

@@ -16,7 +16,7 @@ from .render import text_report
 from .service import RelationsService, extract
 
 plugin = NekroPlugin(
-    name="群关系观察", module_name="group_relations", author="JiaDodo", version="0.2.0",
+    name="群关系观察", module_name="group_relations", author="JiaDodo", version="0.2.1",
     description="根据本群聊天赏析亲属、损友、CP、情妇、主仆等娱乐关系，附原话依据和图片报告；直接使用原生 WebUI。",
     url="https://github.com/JiaDodo/nekro-plugin-group-relations", support_adapter=["onebot_v11"],
     allow_sleep=True, sleep_brief="分析本群互动关系、查询我的聊天搭子、生成群关系图和关系周报。",
@@ -112,7 +112,7 @@ async def relations_command(context: CommandExecutionContext, days: int = Arg("�
             if analysis.get("error"):
                 summary += " 聊天赏析暂时不可用，已保留互动统计。"
             elif "sampled" in analysis:
-                summary += f' 赏析 {analysis["sampled"]} 条聊天，提取 {len(analysis.get("relationships", []))} 组角色梗。'
+                summary += f' 赏析 {analysis["sampled"]} 条聊天，提取 {len(analysis.get("relationships", []))} 组关系。'
             else:
                 summary += " " + analysis.get("summary", "")
         # Let the command framework route the attachment. WebUI execution never sends to QQ.
