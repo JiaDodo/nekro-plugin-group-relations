@@ -66,6 +66,11 @@ class ContextTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_relationships("[]", self.context(), LABELS)
 
+    def test_provider_preface_and_markdown_json_supported(self):
+        role = {"source": "U2", "target": "U1", "label": "父亲", "evidence_ids": ["M1", "M2"]}
+        raw = '以下是赏析结果：\n```json\n' + json.dumps({"relationships": [role]}) + '\n```'
+        self.assertEqual(len(parse_relationships(raw, self.context(), LABELS)["relationships"]), 1)
+
     def test_sampling_cap_timeline_and_length(self):
         rows = [row(i, text="主人来啦" if i % 10 == 0 else "你好" * 200) for i in range(1000)]
         context = sample_context(rows, MEMBERS, set(), cap=40, chars=80)

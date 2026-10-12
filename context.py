@@ -86,7 +86,14 @@ def parse_relationships(raw: str, context: dict, allowed: list[str], max_relatio
     content = raw.strip()
     if content.startswith("```"):
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content)
-    data = json.loads(content)
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        # Some compatible providers wrap the requested JSON in a short preface/fence.
+        start = content.find("{")
+        if start < 0:
+            raise
+        data, _ = json.JSONDecoder().raw_decode(content[start:])
     if not isinstance(data, dict) or not isinstance(data.get("relationships"), list):
         raise ValueError("模型未返回关系列表")
     names = {m["id"]: m["name"] for m in context["members"]}
