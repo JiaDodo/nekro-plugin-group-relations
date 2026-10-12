@@ -30,13 +30,13 @@ class IdentityTests(unittest.TestCase):
                  "mentions": ["10001"], "reply": "", "reply_sender": ""}]
         context = sample_context(rows, members, set())
         self.assertEqual(context["lookup"]["M1"]["text"], rows[0]["text"])
-        raw = {"summary": "U1认爹，U2接话", "relationships": [{"source": "U2", "target": "U1",
-               "label": "父亲", "reason": "U1喊U2爸爸", "evidence_ids": ["M1", "M2"]}]}
+        raw = {"summary": "U1认爹，U2在M2里接话", "relationships": [{"source": "U2", "target": "U1",
+               "label": "父亲", "reason": "U1喊U2爸爸，见M1", "evidence_ids": ["M1", "M2"]}]}
         report = enrich(analyze(rows, 0, 10), analyze([], -10, 0))
         report.update(channel_name="测试", days=7, min_events=1,
                       context_analysis=parse_relationships(json.dumps(raw), context, LABELS))
         for result in (image_html(report), text_report(report)):
-            self.assertNotRegex(result, r'\bU\d+\b|\[@id:|\[1000[12]\]')
+            self.assertNotRegex(result, r'[UM]\d+|\[@id:|\[1000[12]\]')
             self.assertNotIn("旧名字", result)
         self.assertIn("甲喊乙爸爸", text_report(report))
 

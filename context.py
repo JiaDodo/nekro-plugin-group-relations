@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from .identity import canonical_text
+from .identity import canonical_text, model_prose
 
 LABELS = ["父亲", "母亲", "儿子", "女儿", "兄弟", "姐妹", "祖孙", "朋友", "损友", "恋人", "夫妻", "情妇", "情夫", "主人", "仆人", "欢喜冤家", "舔狗", "金主", "工具人"]
 TERMS = re.compile("爸|爹|父亲|妈|母亲|儿子|女儿|兄弟|姐妹|爷|奶|朋友|损友|恋人|夫妻|老婆|老公|宝贝|宝宝|情妇|情夫|主人|仆人|奴才|舔狗|金主|工具人|喜欢你|爱你|CP|cp")
@@ -130,11 +130,11 @@ def parse_relationships(raw: str, context: dict, allowed: list[str], max_relatio
             continue
         seen.add(identity)
         accepted.append({"source": ua, "target": ub, "label": label,
-                         "reason": canonical_text(str(item.get("reason", ""))[:180], context["aliases"], known),
+                         "reason": model_prose(str(item.get("reason", ""))[:180], context["aliases"], known),
                          "basis": "双向接梗" if {r["sender"] for r in evidence} == {ua, ub} else "单方喊话",
                          "evidence": [{"sender": r["sender"], "ts": r["ts"], "text": canonical_text(r["text"][:240], context["aliases"], known)} for r in evidence]})
         if len(accepted) >= max_relations:
             break
     # Do not present an unsupported free-form summary after every relationship was rejected.
-    return {"relationships": accepted, "summary": canonical_text(str(data.get("summary", ""))[:400], context["aliases"], known) if accepted else "样本中未找到足够明确的关系梗，暂不强行配对。",
+    return {"relationships": accepted, "summary": model_prose(str(data.get("summary", ""))[:400], context["aliases"], known) if accepted else "样本中未找到足够明确的关系梗，暂不强行配对。",
             "sampled": context["sampled"], "available": context["available"]}

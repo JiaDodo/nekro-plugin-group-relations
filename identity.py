@@ -21,6 +21,12 @@ def plain_text(text: str, names: dict[str, str]) -> str:
     return REFERENCE.sub(lambda m: names.get(m.group(1), m.group(0)), str(text))
 
 
+def model_prose(text: str, aliases: dict[str, str], known: set[str]) -> str:
+    # Evidence IDs help validation, but are meaningless to the report reader.
+    text = re.sub(r"(?<![A-Za-z0-9_])M\d+(?![A-Za-z0-9_])", "原话", str(text))
+    return canonical_text(text, aliases, known)
+
+
 def member_names(members: list[dict]) -> dict[str, str]:
     names = {m["id"]: re.sub(r"\s+", " ", str(m["name"])).strip() or m["id"] for m in members}
     counts = {}
