@@ -29,8 +29,7 @@ def overview(report: dict) -> dict:
     for member in report["graph"]["nodes"]:
         if member["id"] not in selected and len(selected) < 12:
             selected.append(member["id"])
-    shown_roles = [{**r, "number": i} for i, r in enumerate(roles, 1)
-                   if r["source"] in selected and r["target"] in selected][:12]
+    shown_roles = [r for r in roles if r["source"] in selected and r["target"] in selected][:12]
     used = {tuple(sorted((r["source"], r["target"]))) for r in shown_roles}
     degree = Counter(uid for pair in used for uid in pair)
     edges = []
@@ -131,25 +130,29 @@ def graph_svg(report: dict) -> str:
             continue
         x1, y1 = positions[role["source"]]
         x2, y2 = positions[role["target"]]
+        label = role["label"]
+        label_width = 20 + sum(18 if unicodedata.east_asian_width(c) in "WF" else 9 for c in label)
+        half_width = label_width / 2
         length = max(1, math.hypot(x2 - x1, y2 - y1))
         candidates = [(x1 + (x2-x1)*t - (y2-y1)/length*offset,
                        y1 + (y2-y1)*t + (x2-x1)/length*offset)
                       for t in (.5, .4, .6, .3, .7) for offset in (0, 35, -35, 65, -65, 100, -100, 130, -130)]
+        # Longer Chinese labels may need the free space between rows.
+        candidates.extend((x, y) for x in range(60, 941, 80) for y in range(20, height - 24, 18))
         def clearance(point):
-            if not 25 <= point[0] <= 975 or not 20 <= point[1] <= height - 25:
-                return -1000
-            node_gap = min(min(math.hypot(point[0]-p[0], point[1]-p[1]) - 40,
-                               math.hypot(max(0, abs(point[0]-p[0])-110), max(0, abs(point[1]-(p[1]+65))-28))) for p in positions.values())
-            label_gap = min((math.hypot(point[0]-p[0], (point[1]-p[1])*2) for p in label_positions), default=1000)
-            overlaps = sum(abs(point[0]-p[0]) < 62 and abs(point[1]-p[1]) < 32 for p in label_positions)
+            if not half_width + 8 <= point[0] <= 992 - half_width or not 20 <= point[1] <= height - 25:
+                return -1e9
+            node_gap = min(min(math.hypot(max(0, abs(point[0]-p[0])-half_width), max(0, abs(point[1]-p[1])-14)) - 40,
+                               math.hypot(max(0, abs(point[0]-p[0])-112-half_width), max(0, abs(point[1]-(p[1]+65))-42))) for p in positions.values())
+            label_gap = min((math.hypot(max(0, abs(point[0]-p[0])-half_width-p[2]), max(0, abs(point[1]-p[1])-28)) for p in label_positions), default=1000)
+            overlaps = sum(abs(point[0]-p[0]) < half_width + p[2] + 12 and abs(point[1]-p[1]) < 32 for p in label_positions)
             distance = math.hypot(point[0]-(x1+x2)/2, point[1]-(y1+y2)/2)
-            return min(node_gap, 80) + min(label_gap, 100) - overlaps * 10000 - (10000 if node_gap < 22 else 0) - distance * .08
+            return min(node_gap, 80) + min(label_gap, 100) - overlaps * 10000 - (10000 if node_gap < 4 else 0) - distance * .08
         x, y = max(candidates, key=clearance)
-        label_positions.append((x, y))
-        label = f'R{role["number"]:02d}'
+        label_positions.append((x, y, half_width))
         parts.append(f'<polyline points="{x1},{y1} {x},{y} {x2},{y2}" fill="none" stroke="#eea5d3" stroke-opacity=".75" stroke-width="2" stroke-dasharray="5 6"/>'
-                     f'<rect x="{x-25}" y="{y-14}" width="50" height="27" rx="8" fill="#34203b"/>'
-                     f'<text x="{x}" y="{y+5}" text-anchor="middle" fill="#ffc5e9" font-size="18">{label}</text>')
+                     f'<rect x="{x-half_width}" y="{y-14}" width="{label_width}" height="27" rx="8" fill="#34203b"/>'
+                     f'<text x="{x}" y="{y+5}" text-anchor="middle" fill="#ffc5e9" font-size="18">{esc(label)}</text>')
     for u in nodes:
         x, y = positions[u["id"]]
         radius = 30
@@ -211,9 +214,9 @@ def image_html(report: dict) -> str:
     notes = "".join(f'<p>{esc(n)}</p>' for n in report["notes"])
     context = report.get("context_analysis", {})
     roles = []
-    for i, r in enumerate(context.get("relationships", []), 1):
+    for r in context.get("relationships", []):
         quotes = "".join(f'<blockquote>{person(report, q["sender"], names, tiny=True)}：{rich_text(q["text"], report, names)}</blockquote>' for q in r["evidence"][:1])
-        roles.append(f'<article class="role"><div class="rolehead"><b class="reference">R{i:02d}</b><b class="tag">{esc(r["label"])}</b></div><div class="actors">{person(report, r["source"], names)}<span class="arrow">→</span>{person(report, r["target"], names)}</div><p>{rich_text(r["reason"], report, names)}</p>{quotes}<small>{esc(r["basis"])} · 共 {len(r["evidence"])} 条依据 · 原话节选</small></article>')
+        roles.append(f'<article class="role"><div class="rolehead"><b class="tag">{esc(r["label"])}</b></div><div class="actors">{person(report, r["source"], names)}<span class="arrow">→</span>{person(report, r["target"], names)}</div><p>{rich_text(r["reason"], report, names)}</p>{quotes}<small>{esc(r["basis"])} · 共 {len(r["evidence"])} 条依据 · 原话节选</small></article>')
     context_info = f'抽样 {context.get("sampled", 0)} 条聊天' if "sampled" in context else ""
     if context.get("generated_at"):
         context_info += " · 赏析时间 " + date_label(context["generated_at"])
@@ -240,7 +243,7 @@ def image_html(report: dict) -> str:
     .actors{{height:30px;margin:2px 0}}.person-name{{line-height:1.25}}.role p{{margin:2px 0}}.role blockquote{{height:40px;max-height:40px;padding:2px 4px;margin:1px 0;line-height:18px}}.role p .tiny,.role blockquote .tiny{{height:16px;vertical-align:-3px}}.role p .tiny img,.role blockquote .tiny img,.role p .tiny .face-fallback,.role blockquote .tiny .face-fallback{{width:14px;height:14px}}.dense .actors{{margin:2px 0}}.dense .role p{{height:34px;line-height:17px}}.dense .role blockquote{{height:36px;max-height:36px;line-height:16px}}
     </style><body><section class="sheet"><div class="eyebrow">01 / 群关系图</div><h1>{esc(report['channel_name'])}</h1><div class="sub">最近 {report['days']} 天 · {date_label(m['start'])} — {date_label(m['end'] - 1)}</div>
     <div class="stats">{''.join(f'<div class="stat"><b>{value}</b><span>{label}</span></div>' for label, value in [('记录消息',m['messages']),('参与成员',m['members']),('明确互动',m['interactions']),('互动组合',m['pairs'])])}</div>
-    <section class="panel">{graph_svg(report)}<div class="legend">蓝线：主要互动 · 粉色虚线：赏析关系，R 编号对应右侧卡片<br>概览 {len(graph['nodes'])} / {m['members']} 位成员 · {len(graph['edges']) + len(graph['roles'])} 条主要连线；全部 {len(roles)} 条赏析见右侧。</div></section>
+    <section class="panel">{graph_svg(report)}<div class="legend">蓝线：主要互动 · 粉色虚线：赏析关系，角色方向与原话见右侧<br>概览 {len(graph['nodes'])} / {m['members']} 位成员 · {len(graph['edges']) + len(graph['roles'])} 条主要连线；全部 {len(roles)} 条赏析见右侧。</div></section>
     <section class="panel"><h2>聊天搭子榜</h2><div class="rankings">{rankings or '<p>还没有明确互动记录。</p>'}</div></section><section class="panel observations">{notes}</section>
     <footer>互动指数用于排序 · 根据本群已记录消息生成</footer></section>
     <section class="sheet"><div class="eyebrow">02 / 聊天赏析</div><h1>群聊关系</h1><div class="sub">前者 → 后者：前者扮演标签身份 · 最近 {report['days']} 天</div>{theater}
