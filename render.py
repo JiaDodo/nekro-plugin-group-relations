@@ -9,6 +9,7 @@ from collections import Counter
 
 from .analysis import date_label
 from .identity import REFERENCE, member_names, plain_text
+from .graph_layout import positions_for, route_link
 
 REPORT_WIDTH = 1480
 
@@ -108,11 +109,17 @@ def graph_svg(report: dict) -> str:
     graph = overview(report)
     nodes, edges = graph["nodes"], graph["edges"]
     names = member_names(report["members"])
-    columns = min(4, max(1, len(nodes)))
-    rows = max(1, math.ceil(len(nodes) / columns))
-    height = rows * 180 + 40
-    positions = {u["id"]: ((i % columns + .5) * 1000 / columns, 65 + (i // columns) * 180)
-                 for i, u in enumerate(nodes)}
+    positions, height = positions_for(nodes, edges + graph["roles"])
+    captions = {}
+    name_boxes = []
+    for node in nodes:
+        uid = node['id']
+        lines = name_lines(names[uid], width=18)
+        width = 18 + max(sum(18 if unicodedata.east_asian_width(c) in 'WF' else 9 for c in line) for line in lines)
+        caption_height = len(lines)*24+10
+        captions[uid] = (lines, width, caption_height)
+        x,y = positions[uid]
+        name_boxes.append((x, y+36+caption_height/2, width, caption_height))
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 {height}" role="img" aria-label="群聊互动关系概览">',
              '<defs><radialGradient id="halo"><stop stop-color="#83b7ff" stop-opacity=".12"/><stop offset="1" stop-color="#83b7ff" stop-opacity="0"/></radialGradient></defs>',
              f'<ellipse cx="500" cy="{height/2}" rx="480" ry="{height/2}" fill="url(#halo)"/>', '<g id="graph-content">']
@@ -121,9 +128,10 @@ def graph_svg(report: dict) -> str:
         x2, y2 = positions[e["target"]]
         color = "#8cbfff" if e["mutual"] >= .4 else "#657795"
         width = min(7, 1.5 + math.log1p(e["events"]))
-        parts.append(f'<line class="edge" data-source="{esc(e["source"])}" data-target="{esc(e["target"])}" '
-                     f'x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color}" stroke-width="{width:.2f}" '
-                     f'stroke-opacity=".62"><title>{e["events"]} 次互动 · {e["days"]} 天</title></line>')
+        route = route_link((x1, y1), (x2, y2), positions, height, name_boxes=name_boxes)
+        parts.append(f'<path class="edge" data-source="{esc(e["source"])}" data-target="{esc(e["target"])}" '
+                     f'd="{route["path"]}" fill="none" stroke="{color}" stroke-width="{width:.2f}" '
+                     f'stroke-opacity=".62"><title>{e["events"]} 次互动 · {e["days"]} 天</title></path>')
     label_positions = []
     for role in graph["roles"]:
         if role["source"] not in positions or role["target"] not in positions:
@@ -133,25 +141,12 @@ def graph_svg(report: dict) -> str:
         label = role["label"]
         label_width = 20 + sum(18 if unicodedata.east_asian_width(c) in "WF" else 9 for c in label)
         half_width = label_width / 2
-        length = max(1, math.hypot(x2 - x1, y2 - y1))
-        candidates = [(x1 + (x2-x1)*t - (y2-y1)/length*offset,
-                       y1 + (y2-y1)*t + (x2-x1)/length*offset)
-                      for t in (.5, .4, .6, .3, .7) for offset in (0, 35, -35, 65, -65, 100, -100, 130, -130)]
-        # Longer Chinese labels may need the free space between rows.
-        candidates.extend((x, y) for x in range(60, 941, 80) for y in range(20, height - 24, 18))
-        def clearance(point):
-            if not half_width + 8 <= point[0] <= 992 - half_width or not 20 <= point[1] <= height - 25:
-                return -1e9
-            node_gap = min(min(math.hypot(max(0, abs(point[0]-p[0])-half_width), max(0, abs(point[1]-p[1])-14)) - 40,
-                               math.hypot(max(0, abs(point[0]-p[0])-112-half_width), max(0, abs(point[1]-(p[1]+65))-42))) for p in positions.values())
-            label_gap = min((math.hypot(max(0, abs(point[0]-p[0])-half_width-p[2]), max(0, abs(point[1]-p[1])-28)) for p in label_positions), default=1000)
-            overlaps = sum(abs(point[0]-p[0]) < half_width + p[2] + 12 and abs(point[1]-p[1]) < 32 for p in label_positions)
-            distance = math.hypot(point[0]-(x1+x2)/2, point[1]-(y1+y2)/2)
-            return min(node_gap, 80) + min(label_gap, 100) - overlaps * 10000 - (10000 if node_gap < 4 else 0) - distance * .08
-        x, y = max(candidates, key=clearance)
+        route = route_link((x1, y1), (x2, y2), positions, height,
+                           half_width=half_width, labels=label_positions, name_boxes=name_boxes)
+        x, y = route["label"]
         label_positions.append((x, y, half_width))
-        parts.append(f'<polyline points="{x1},{y1} {x},{y} {x2},{y2}" fill="none" stroke="#eea5d3" stroke-opacity=".75" stroke-width="2" stroke-dasharray="5 6"/>'
-                     f'<rect x="{x-half_width}" y="{y-14}" width="{label_width}" height="27" rx="8" fill="#34203b"/>'
+        parts.append(f'<path class="relationship" d="{route["path"]}" fill="none" stroke="#eea5d3" stroke-opacity=".75" stroke-width="2" stroke-dasharray="5 6"/>'
+                     f'<rect class="relation-label" x="{x-half_width}" y="{y-14}" width="{label_width}" height="27" rx="8" fill="#34203b"/>'
                      f'<text x="{x}" y="{y+5}" text-anchor="middle" fill="#ffc5e9" font-size="18">{esc(label)}</text>')
     for u in nodes:
         x, y = positions[u["id"]]
@@ -162,12 +157,12 @@ def graph_svg(report: dict) -> str:
         face = (f'<defs><clipPath id="{clip_id}"><circle r="{radius}"/></clipPath></defs>'
                 f'<image x="-{radius}" y="-{radius}" width="{radius*2}" height="{radius*2}" href="{avatar}" clip-path="url(#{clip_id})" preserveAspectRatio="xMidYMid slice"/>') if avatar else (
                 f'<text text-anchor="middle" dominant-baseline="central" fill="{u["color"]}" font-size="23" font-weight="700">{esc(name[:1])}</text>')
-        label_lines = name_lines(name)
+        label_lines, caption_width, caption_height = captions[u['id']]
         label_text = "".join(f'<text text-anchor="middle" y="{54+line*24}" fill="#e4ebf7" font-size="18">{esc(value)}</text>' for line, value in enumerate(label_lines))
         parts.append(f'<g class="node" data-id="{esc(u["id"])}" transform="translate({x},{y})" tabindex="0" role="button" aria-label="{esc(u["name"])}">'
                      f'<circle r="{radius + 6:.1f}" fill="{u["color"]}" fill-opacity=".1"/>'
                      f'<circle r="{radius:.1f}" fill="#18253b" stroke="{u["color"]}" stroke-width="2"/>'
-                     f'{face}<rect x="-112" y="36" width="224" height="{len(label_lines)*24+10}" rx="8" fill="#101b2d"/>{label_text}'
+                     f'{face}<rect class="member-name" x="{-caption_width/2}" y="36" width="{caption_width}" height="{caption_height}" rx="8" fill="#101b2d"/>{label_text}'
                      f'<title>{esc(u["name"])} · {u["messages"]} 条发言 · {u["degree"]} 位互动成员</title></g>')
     if not nodes:
         parts.append(f'<text x="500" y="{height/2}" text-anchor="middle" fill="#93a4bf" font-size="22">暂无群聊互动数据</text>')

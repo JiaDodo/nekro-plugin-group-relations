@@ -68,6 +68,8 @@ DeepSeek 官方接口使用非思考模式和 JSON 输出，避免长群聊样�
 
 0.3版将概览限制为12位成员、最多14条主要连线，固定头像和昵称位置；连线直接标注父亲、损友等关系名称，方向与原话见右侧卡片。模型内部 U1/U2 代号在理由、原话、总结中统一还原为头像昵称，重名附账号末四位。QQ头像按需获取并内嵌到图片，缓存3天；头像获取失败显示昵称首字。排版与头像昵称展示参考了 [miuzhaii/nekro-plugin-group-analysis](https://github.com/miuzhaii/nekro-plugin-group-analysis)，本插件渲染实现独立编写。
 
+0.3.2使用按连接关系分布的成员布局，中心成员居中；连线为直线或轻微弧线，标签仅沿线滑动，不会把连线拉成折角。昵称底板按实际文字宽度计算。复杂关系可以有交叉，概览不承诺完全无交叉。
+
 ## 配置
 
 | 配置 | 默认 | 说明 |
@@ -103,9 +105,12 @@ DeepSeek 官方接口使用非思考模式和 JSON 输出，避免长群聊样�
 python -m pip install httpx
 python -m unittest discover -s tests -v
 python scripts/demo.py /tmp/group-relations-demo
+python scripts/layout_samples.py /tmp/group-relations-layout --endpoint http://nekro_html2img:3000
 ```
 
 测试覆盖统计、群隔离、退出与清空、抽样上限、证据核验、虚构ID/无依据标签过滤、模型输出转义和赏析缓存。模拟脚本仅生成虚构成员与对话。
+
+连线样例脚本生成6组可重复的虚构数据：5人交叉关系、12人普通关系网、54人密集群聊、12人单人中心、8人分组重名、空数据。输出 `index.html` 检查页及各组 PNG、SVG、HTML、JSON；省略 `--endpoint` 可离线生成除PNG之外的文件，不调用聊天模型。自动检查包含头像昵称间距、画布边界、中心成员位置、曲线端点与弯曲幅度、标签位于对应曲线上、样例标签不遮挡头像昵称、密集群聊保留完整卡片。
 
 图片故障检查渲染地址、令牌、容器网络、中文字体。赏析失败检查聊天模型组，失败仍显示统计。后台没有命令执行功能时，请升级到支持富媒体命令输出的 Nekro Agent 版本。
 
