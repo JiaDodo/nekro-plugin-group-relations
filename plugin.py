@@ -161,7 +161,7 @@ async def optin_command(context: CommandExecutionContext):
 
 
 @plugin.mount_command(name="relations_manage", aliases=["群关系管理"], description="管理当前群关系统计：status/sync/pause/resume/clear", permission=CommandPermission.SUPER_USER, usage="relations_manage [action] [days:7]", category="群关系")
-async def manage_command(context: CommandExecutionContext, action: str = Arg("status/sync/pause/resume/clear，clear会清空本群记录", default="status", positional=True), days: int = Arg("同步最近天数，1–30", default=7)):
+async def manage_command(context: CommandExecutionContext, action: str = Arg("clear会清空本群记录", default="status", positional=True, choices=["status", "sync", "pause", "resume", "clear"]), days: int = Arg("同步最近天数，1–30", default=7, range=(1, 30))):
     import asyncio
     svc = service()
     try:

@@ -20,7 +20,7 @@ git clone https://github.com/JiaDodo/nekro-plugin-group-relations.git group_rela
 ## WebUI 使用
 
 1. 在“插件管理 → 群关系观察 → 配置”设置模型组、关系标签和图片渲染地址。
-2. 进入原生命令执行区，选中要分析的群，选择 `relations`，参数填 `7`。
+2. 进入“设置 → 命令中心”（`/settings/commands`）的执行命令区，选中要分析的群，选择 `relations`，参数填 `7`。
 3. 在原生命令输出中直接查看图片。重新赏析填 `7 refresh:true`；只看统计填 `7 contextual:false`。
 4. 管理采集和历史用 `relations_manage`，无需另开网页。插件“数据管理”标签是框架 KV 管理，不是本插件 SQLite 浏览器。
 

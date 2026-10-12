@@ -287,15 +287,15 @@ class RelationsService:
             async with self.model_lock:
                 async with httpx.AsyncClient(proxy=group.CHAT_PROXY or None, timeout=90) as http:
                     async with AsyncOpenAI(api_key=group.API_KEY, base_url=group.BASE_URL or None,
-                                           http_client=http, max_retries=0) as client:
+                                           http_client=http, max_retries=1) as client:
                         response = await client.chat.completions.create(model=group.CHAT_MODEL,
                             messages=[{"role": "system", "content": SYSTEM_PROMPT},
                                       {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}], max_tokens=3000)
             result = parse_relationships(response.choices[0].message.content or "", context, allowed, cfg.MAX_RELATIONSHIPS)
             result.update(generated_at=int(time.time()), truncated=total > cfg.MAX_HISTORY_MESSAGES)
             return result
-        except Exception:
-            self.plugin.logger.warning("聊天赏析模型调用或结构校验失败，已保留互动统计")
+        except Exception as error:
+            self.plugin.logger.warning(f"聊天赏析失败（{type(error).__name__}，HTTP {getattr(error, 'status_code', '-')}），已保留互动统计")
             return {**empty, "summary": "聊天赏析暂时不可用，互动统计与关系图仍可使用。", "error": True}
 
     def prune_exports(self):

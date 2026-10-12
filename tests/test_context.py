@@ -49,6 +49,18 @@ class ContextTests(unittest.TestCase):
     def test_one_sided_targeted_quote_marked(self):
         self.assertEqual(self.parse(evidence_ids=["M1"])["relationships"][0]["basis"], "单方喊话")
 
+    def test_inverse_role_for_same_pair_is_deduplicated(self):
+        roles = [{"source": "U2", "target": "U1", "label": "父亲", "evidence_ids": ["M1", "M2"]},
+                 {"source": "U1", "target": "U2", "label": "儿子", "evidence_ids": ["M1", "M2"]}]
+        result = parse_relationships(json.dumps({"relationships": roles}), self.context(), LABELS)
+        self.assertEqual(len(result["relationships"]), 1)
+
+    def test_same_group_reply_resolves_author_for_evidence(self):
+        rows = [row(1, "a", "爸爸帮帮我"), {**row(2, "b", "儿子来了"), "reply": "1"}]
+        context = sample_context(rows, MEMBERS, set())
+        self.assertEqual(context["messages"][1]["reply_to"], "U1")
+        self.assertEqual(len(self.parse(context)["relationships"]), 1)
+
     def test_unknown_label_and_bad_output_rejected(self):
         self.assertEqual(self.parse(label="真实出轨对象")["relationships"], [])
         with self.assertRaises(ValueError):
